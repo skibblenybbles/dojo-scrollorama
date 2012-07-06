@@ -1,0 +1,6 @@
+{
+	"name": "scrollorama",
+	"version":"0.1.0",
+	"description": "Dojo tools for doing cool scrolly stuff. Adapted from John Polacek's Scrollorama jQuery plugin.",
+	"dojoBuild": "scrollorama.profile.js"
+}
