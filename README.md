@@ -1,9 +1,8 @@
-#Scrollorama
+# dojo-scrollorama
 
-The jQuery plugin for doing cool scrolly stuff.
+Dojo tools for doing cool scrolly stuff. Adapted from <a href="http://johnpolacek.github.com/scrollorama/" target="_blank">John Polacek's Scrollorama</a> jQuery plugin.
 
-Want to do super-scrolly stuff? Check out [Scrollorama2: SuperScrollorama](http://johnpolacek.github.com/superscrollorama/)
-
+Note: recently forked and currently under construction.
 
 ## License
 
