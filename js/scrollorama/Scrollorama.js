@@ -52,7 +52,8 @@ define(
                 ((has("ff") || has("mozilla")) && "-moz-") ||
                 ((has("webkit") || has("chrome") || has("safari")) && "-webkit-") ||
                 (has("opera") && "-o-") ||
-                (has("ie") && "-ms-"),
+                (has("ie") && "-ms-") ||
+                "",
             
             // TODO: handle firing block change events with proper Dojo events
             // _onBlockChange: null, // ???
@@ -66,7 +67,7 @@ define(
                 window.oRequestAnimationFrame ||
                 window.msRequestAnimationFrame ||
                 function(callback) {
-                    // run the callback immediately - this one is not atomic :(
+                    // run the callback immediately - not atomic :(
     				callback();
     			},
             
@@ -320,7 +321,7 @@ define(
                     blocks,
                     blocksMap;
                 
-                // make sure that _animateAtomic runs in the context of the window
+                // make _animateAtomic run in the context of the window
                 this._animateAtomic = lang.hitch(window, this._animateAtomic);
                 
                 // query for the blocks' nodes
@@ -513,7 +514,7 @@ define(
                                 // calculate easing
                                 if (anim.easing && lang.isFunction(anim.easing)) {
                                     
-                                    animPercent = anim.easing(animPercent, animPercent * 1000, 0, 1, 1000);
+                                    animPercent = anim.easing(animPercent, 0, 1, 1);
                                 }
                                 
                                 // set the property
