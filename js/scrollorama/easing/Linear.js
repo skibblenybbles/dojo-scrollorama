@@ -6,7 +6,7 @@ define(
         
         easing.Linear = {
             
-            none: function(t, b, c, d) {
+            easeNone: function(t, b, c, d) {
                 
                 return (c * (t / d)) + b;
             }
