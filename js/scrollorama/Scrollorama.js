@@ -122,7 +122,7 @@ define(
                 //          "top" (when block reaches top of viewport) or "bottom" (when block first comes into view);
                 //          default is "top" if pin === true; otherwise default is "bottom"
                 //      easing:
-                //          TODO!
+                //          one of the methods from the easing packages or null for Linear easing
                 
                 
                 var 
@@ -149,12 +149,14 @@ define(
                 // process each DOM node
                 nodes.forEach(lang.hitch(this, function(node) {
                     
-                    var // the node's containing block
+                    var 
+                        // the node's containing block
                         block = new NodeList(node).closest(this.selector),
                         
                         // the computed styles for this node
                         styles = domStyle.getComputedStyle(node);
                     
+                    // sanity check
                     // make sure we have a unique containing block
                     if (block.length !== 1) {
                         
