@@ -100,7 +100,8 @@ define(
             _styles: null,
             
             // was the block being animated during the last update?
-            _animatedLast: false,
+            // (initialize to true to force one update)
+            _animatedLast: true,
             
             
             ///////////////////////////////////////////////////////////////////
@@ -181,11 +182,8 @@ define(
                     // the block's position and dimensions
                     blockPosition = domGeom.position(this._block.getNode(), true),
                     
-                    // the calculated top and bottom animation pixels
+                    // the calculated top animation pixel and percentage
                     animTopPixel,
-                    animBottomPixel,
-                    
-                    // the calculated animation percentage
                     animPercent,
                     
                     // the calculated top and bottom pinning offsets
@@ -245,7 +243,7 @@ define(
                         delay = Math.round(0.01 * this.delay * screenPosition.h);
                         break;
                 }
-                animTopPixel -= delay;
+                animTopPixel += delay;
                 
                 
                 // calculate the bottom animation pixel
@@ -283,18 +281,16 @@ define(
                 animBottomPixel += duration;
                 
                 
-                // is the animation on the screen?
-                if (animTopPixel <= screenBottomPixel &&
-                    animBottomPixel >= screenTopPixel
-                ) {
+                // calculate the animation percentage and update
+                animPercent = duration === 0 ? 1.0 : (screenBottomPixel - animTopPixel) / duration;
+                
+                // is the animation currently running?
+                if (animPercent >= 0.0 && animPercent <= 1.0) {
                     
-                    // the animation is on the screen
+                    // the animation is running
                     
-                    // calculate the animation percentage
-                    animPercent = duration === 0 ? 1.0 : (screenBottomPixel - animTopPixel) / duration;
+                    // update the percentage with easing
                     if (this.easing !== null) {
-                        
-                        console.log(animPercent);
                         
                         animPercent = this.easing(animPercent, 0, 1, 1);
                     }
@@ -307,7 +303,7 @@ define(
                     
                 } else {
                     
-                    // the animation is off the screen
+                    // the animation is not running
                     
                     // if we animated on the previous update,
                     // set the begin or end CSS property value
@@ -374,13 +370,13 @@ define(
                     case "left":
                     case "right":
                         
-                        // the node's position should be "relative"
-                        if (styles["position"] !== "relative") {
+                        // the node's position should be not be "static"
+                        if (styles["position"] === "static") {
                             
                             this._styles["position"] = styles["position"];
                             domStyle.set(this._node, "position", "relative");
                         }
-
+                        
                         // calculate the begin and end values
                         value = parseInt(styles[this.property]);
                         if (this.begin === null) {

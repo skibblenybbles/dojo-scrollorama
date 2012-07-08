@@ -63,7 +63,6 @@ define(
                 style = parseInt(style);
                 this._styles["margin-bottom"] = isNaN(style) ? 0 : style;
                 
-                
                 // the node's display should be "inline-block"
                 // so that margin collapsing is turned off
                 if (this._styles["display"] !== "inline-block") {
@@ -71,10 +70,9 @@ define(
                     domStyle.set(this._node, "display", "inline-block");
                 }
                 
-                
-                // the node's position should be "relative"
-                if (this._styles["position"] !== "relative") {
-
+                // the node's position should not be "static"
+                if (this._styles["position"] === "static") {
+                    
                     domStyle.set(this._node, "position", "relative");
                 }
             },
