@@ -7,11 +7,12 @@ define(
         "dojo/has",
         "dojo/window",
         "./_base",
+        "../ranges/Range",
         
         // package modifiers (no passed values required)
         "dojo/_base/sniff",
     ],
-    function(declare, lang, domGeom, domStyle, has, scrollWindow, animation) {
+    function(declare, lang, domGeom, domStyle, has, scrollWindow, animation, Range) {
         
         
         var Animation = declare(null, {
@@ -182,13 +183,11 @@ define(
                     // the block's position and dimensions
                     blockPosition = domGeom.position(this._block.getNode(), true),
                     
-                    // the calculated top animation pixel and percentage
+                    // the calculated top and bottom animation pixels
+                    // and the animation completion percentage
                     animTopPixel,
+                    animBottomPixel,
                     animPercent,
-                    
-                    // the calculated top and bottom pinning offsets
-                    pinTop,
-                    pinBottom,
                     
                     // the calculated delay edge and delay offsets
                     delayEdge,
@@ -246,9 +245,6 @@ define(
                 animTopPixel += delay;
                 
                 
-                // calculate the bottom animation pixel
-                animBottomPixel = animTopPixel;
-                
                 // calculate and add the screen duration offset
                 duration = 0;
                 switch (this.screenDurationUnits) {
@@ -278,10 +274,12 @@ define(
                         // convert percentage to decimal
                         duration += Math.round(0.01 * this.blockDuration * blockPosition.h);
                 }
-                animBottomPixel += duration;
                 
+                // calculate the animation bottom pixel
+                animBottomPixel = animTopPixel + duration;
                 
-                // calculate the animation percentage and update
+                // calculate the animation percentage, update the node and
+                // return the animation's pinning data
                 animPercent = duration === 0 ? 1.0 : (screenBottomPixel - animTopPixel) / duration;
                 
                 // is the animation currently running?
@@ -309,12 +307,12 @@ define(
                     // set the begin or end CSS property value
                     if (this._animatedLast) {
                         
-                        if (animTopPixel > screenBottomPixel) {
+                        if (animPercent < 0.0) {
                             
                             // the animation has yet to begin
                             this._setProperty(this.begin);
                             
-                        } else if (animBottomPixel < screenTopPixel) {
+                        } else if (animPercent > 1.0) {
                             
                             // the animation is already over
                             this._setProperty(this.end);
@@ -325,17 +323,34 @@ define(
                     this._animatedLast = false;
                 }
                 
-                
-                // calculate and return pinning data?
+                // calculate pinning data
                 if (this.pin) {
                     
-                    pinTop = Math.max(0, screenBottomPixel - animTopPixel);
-                    pinBottom = pinTop + duration;
-                    
-                    return {
-                        top: pinTop,
-                        bottom: pinBottom
-                    };
+                    if (animPercent < 0.0) {
+                        
+                        // the animation is below its starting point
+                        return {
+                            state: "below",
+                            range: new Range(animTopPixel, animBottomPixel)
+                        };
+                        
+                    } else if (animPercent > 1.0) {
+                        
+                        // the animation is above its ending point
+                        return {
+                            state: "above",
+                            range: new Range(animTopPixel, animBottomPixel)
+                        };
+                        
+                    } else {
+                        
+                        // the animation is pinned
+                        return {
+                            state: "pinned",
+                            range: new Range(animTopPixel, animBottomPixel),
+                            position: screenPosition.h - delayEdge - delay
+                        };
+                    }
                 
                 } else {
                     
