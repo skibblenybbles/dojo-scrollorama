@@ -5,14 +5,12 @@ define(
         "dojo/dom-geometry",
         "dojo/dom-style",
         "dojo/has",
-        "dojo/window",
         "./_base",
-        "../ranges/Range",
         
         // package modifiers (no passed values required)
         "dojo/_base/sniff",
     ],
-    function(declare, lang, domGeom, domStyle, has, scrollWindow, animation, Range) {
+    function(declare, lang, domGeom, domStyle, has, animation) {
         
         
         var Animation = declare(null, {
@@ -22,50 +20,33 @@ define(
             // options
             ///////////////////////////////////////////////////////////////////
             
-            // amount of scrolling (in delayUnits) from the (delayEdge) of the
+            // amount of scrolling in pixels from the top edge of the
             // block crossing the bottom edge of the screen before animation
-            // starts.
+            // begins (Number or function).
             delay: 0,
             
-            // the units to measure the scroll delay.
-            // may be "px" for absolute lengths or "%" for relative lengths
-            // of the screen's height, e.g. 25%.
-            delayUnits: "%",
+            // screen length of scrolling over which the animation occurs
+            // after the delay from the bottom of the screen has been scrolled
+            // through.
+            duration: 0,
             
-            // the horizontal edge line of the block from which to measure the
-            // delay with respect to the bottom edge of the screen
-            // may be a numerical percentage of the block's border-box height,
-            // e.g. 50 for the middle of the block, or one of the presets
-            // "top" === 0, "bottom" === 100 or "middle" === 50
-            delayEdge: 0,
-            
-            // the overall duration of the animation is the sum of
-            // screenDuration and blockDuration.
-            // used in combination with "%" units, this makes it easy to 
-            // configure an animation that runs from the bottom of the screen 
-            // all the way until the block has completely left the screen,
-            // i.e. screenDuration === 100% and blockDuration === 100%
-            // with delay === 0.
-            
-            // screen length of scrolling (in screenDurationUnits) over which
-            // the animation occurs after the delay from the bottom of the
-            // screen has been scrolled through.
-            screenDuration: 100,
-            
-            // the units to measure the screen scroll duration
-            // may be "px" for absolute lengths or "%" for relative lengths
-            // of the screen's height, e.g. 25%.
-            screenDurationUnits: "%",
-            
-            // block length of scrolling (in blockDurationUnits) over which
-            // the animation occurs after the delay from the bottom of the
-            // screen has been scrolled through.
-            blockDuration: 100,
-            
-            // the units to measure the block scroll duration
-            // may be "px" for absolute lengths or "%" for relative lengths
-            // of the block's border-box height, e.g. 25%.
-            blockDurationUnits: "%",
+            // the delay and duration settings control when the animation
+            // begins and ends. each setting may either be a Number or a
+            // function that returns a Number with the following signature:
+            //
+            //  function(screenHeight, blockHeight, pinDelay, pinDuration)
+            //
+            //      screenHeight:
+            //          the current height of the screen in pixels
+            //
+            //      blockHeight:
+            //          the current height of the block in pixels
+            //
+            //      pinDelay:
+            //          the delay in pixels before the block becomes pinned
+            //
+            //      pinDuration:
+            //          the block's pinning duration
             
             // CSS property being animated (must be numerical)
             property: null,
@@ -78,10 +59,7 @@ define(
             // (uses current value if not specified)
             end: null,
             
-            // pin the block during the animation's duration?
-            pin: false,
-            
-            // one of the methods from the easing packages
+            // one of the methods from the easing package
             // (the default, null, uses Linear.easeNone() easing)
             easing: null,
             
@@ -89,9 +67,6 @@ define(
             ///////////////////////////////////////////////////////////////////
             // internal state
             ///////////////////////////////////////////////////////////////////
-            
-            // the block in which the animation occurs
-            _block: null,
             
             // the DOM node inside the block to which the animation applies
             _node: null,
@@ -109,53 +84,33 @@ define(
             // constructor
             ///////////////////////////////////////////////////////////////////
             
-            constructor: function(block, node, options) {
+            constructor: function(node, options) {
                 
-                this._block = block;
                 this._node = node;
                 declare.safeMixin(this, options);
                 
                 // sanity checks
-                if (this._block === null || this._block === undefined) {
-                    
-                    throw new Error("You must pass a Block instance to the Animation constructor.");
-                }
-                
                 if (this._node === null || this._node === undefined) {
                     
                     throw new Error("You must pass a DOM node to the Animation constructor.");
                 }
                 
-                if (typeof this.delayEdge !== "number" &&
-                    this.delayEdge !== "top" &&
-                    this.delayEdge !== "middle" &&
-                    this.delayEdge !== "bottom"
-                ) {
+                if (!(typeof this.delay === "number" || lang.isFunction(this.delay))) {
                     
-                    throw new Error("The delayEdge option must be a number, \"top\", \"middle\" or \"bottom\".");
+                    throw new Error("The delay option must be either a Number or a function.");
                 }
                 
-                if (this.delayUnits !== "px" && this.delayUnits !== "%") {
+                if (!(typeof this.duration === "number" || lang.isFunction(this.duration))) {
                     
-                    throw new Error("The delayUnits option must be set to \"px\" or \"%\".");
-                }
-                
-                if (this.screenDurationUnits !== "px" && this.screenDurationUnits !== "%") {
-                    
-                    throw new Error("The screenDurationUnits option must be set to \"px\" or \"%\".");
-                }
-                
-                if (this.blockDurationUnits !== "px" && this.blockDurationUnits !== "%") {
-                    
-                    throw new Error("The blockDurationUnits option must be set to \"px\" or \"%\".");
+                    throw new Error("The duration option must be either a Number or a function.");
                 }
                 
                 if (this.property === null) {
                     
-                    throw new Error("You property option must be set to a CSS property name.");
+                    throw new Error("The property option must be set to a CSS property name.");
                 }
                 
-                if (this.easing !== null && !lang.isFunction(this.easing)) {
+                if (!(this.easing === null || lang.isFunction(this.easing))) {
                     
                     throw new Error("The easing option must be set to an easing function or null.");
                 }
@@ -169,118 +124,34 @@ define(
             // public api
             ///////////////////////////////////////////////////////////////////
             
-            // update the node's animation.
-            // if the animation is not pinned, return null.
-            // otherwise, return the required top and bottom pin margins.
-            update: function() {
+            // update the node's animation
+            update: function(screenTopPixel, screenHeight, blockTopPixel, blockHeight, pinDelay, pinDuration) {
                 
                 var 
-                    // the screen's position and dimensions
-                    screenPosition = scrollWindow.getBox(),
-                    screenTopPixel = screenPosition.t,
-                    screenBottomPixel = screenTopPixel + screenPosition.h,
-                    
-                    // the block's position and dimensions
-                    blockPosition = domGeom.position(this._block.getNode(), true),
-                    
-                    // the calculated top and bottom animation pixels
-                    // and the animation completion percentage
-                    animTopPixel,
-                    animBottomPixel,
-                    animPercent,
-                    
-                    // the calculated delay edge and delay offsets
-                    delayEdge,
-                    delay,
-                    
-                    // the calculated duration offset
-                    duration;
-                    
+                    // calculate the delay offset
+                    delay = 
+                        lang.isFunction(this.delay)
+                        ?
+                        this.delay(screenHeight, blockHeight, pinDelay, pinDuration)
+                        :
+                        this.delay,
                 
-                // calculate the top animation pixel
-                animTopPixel = blockPosition.y;
+                    // calculate the duration
+                    duration =
+                        lang.isFunction(this.duration)
+                        ?
+                        this.duration(screenHeight, blockHeight, pinDelay, pinDuration)
+                        :
+                        this.duration,
                 
-                // calculate and add the delay edge offset
-                switch (this.delayEdge) {
-                    
-                    case "top":
-                        
-                        delayEdge = 0;
-                        break;
-                    
-                    case "middle":
-                        
-                        delayEdge = 0.5;
-                        break;
-                    
-                    case "bottom":
-                        
-                        delayEdge = 1.0;
-                        break;
-                    
-                    default:
-                        
-                        // convert percentage to decimal
-                        delayEdge = 0.01 * this.delayEdge;
-                        break;
-                }
-                delayEdge = Math.round(delayEdge * blockPosition.h);
-                animTopPixel += delayEdge;
+                    // calculate the animation completion percentage
+                    animPercent = 
+                        duration === 0
+                        ?
+                        1.0
+                        :
+                        (screenTopPixel + screenHeight - (blockTopPixel + delay)) / duration;
                 
-                // calculate and add the delay offset
-                delay = 0;
-                switch (this.delayUnits) {
-                    
-                    case "px":
-                        
-                        delay = this.delay;
-                        break;
-                    
-                    case "%":
-                        
-                        // convert percentage to decimal
-                        delay = Math.round(0.01 * this.delay * screenPosition.h);
-                        break;
-                }
-                animTopPixel += delay;
-                
-                
-                // calculate and add the screen duration offset
-                duration = 0;
-                switch (this.screenDurationUnits) {
-                    
-                    case "px":
-                        
-                        duration = this.screenDuration;
-                        break;
-                    
-                    case "%":
-                        
-                        // convert percentage to decimal
-                        duration = Math.round(0.01 * this.screenDuration * screenPosition.h);
-                        break;
-                }
-                
-                // calculate and add the block duration offset
-                switch (this.blockDurationUnits) {
-                    
-                    case "px":
-                        
-                        duration += this.blockDuration;
-                        break;
-                    
-                    case "%":
-                        
-                        // convert percentage to decimal
-                        duration += Math.round(0.01 * this.blockDuration * blockPosition.h);
-                }
-                
-                // calculate the animation bottom pixel
-                animBottomPixel = animTopPixel + duration;
-                
-                // calculate the animation percentage, update the node and
-                // return the animation's pinning data
-                animPercent = duration === 0 ? 1.0 : (screenBottomPixel - animTopPixel) / duration;
                 
                 // is the animation currently running?
                 if (animPercent >= 0.0 && animPercent <= 1.0) {
@@ -321,41 +192,6 @@ define(
                     
                     // this will no longer have been animated on the previous update
                     this._animatedLast = false;
-                }
-                
-                // calculate pinning data
-                if (this.pin) {
-                    
-                    if (animPercent < 0.0) {
-                        
-                        // the animation is below its starting point
-                        return {
-                            state: "below",
-                            range: new Range(animTopPixel, animBottomPixel)
-                        };
-                        
-                    } else if (animPercent > 1.0) {
-                        
-                        // the animation is above its ending point
-                        return {
-                            state: "above",
-                            range: new Range(animTopPixel, animBottomPixel)
-                        };
-                        
-                    } else {
-                        
-                        // the animation is pinned
-                        return {
-                            state: "pinned",
-                            range: new Range(animTopPixel, animBottomPixel),
-                            position: screenPosition.h - delayEdge - delay
-                        };
-                    }
-                
-                } else {
-                    
-                    // no pinning to worry about
-                    return null;
                 }
             },
             

@@ -9,16 +9,32 @@ define(
         "dojo/dom-style",
         "dojo/on",
         "dojo/query",
+        "dojo/window",
         "./_base",
         "./blocks/Block",
         "./animations/Animation",
-        "./ranges/RangeSet",
         
         // package modifiers (no passed values required)
         "dojo/NodeList-traverse"
     ],
-    function(array, declare, lang, NodeList, domAttr, domGeom, domStyle, on, query, scrollorama, Block, Animation, RangeSet) {
+    function(array, declare, lang, NodeList, domAttr, domGeom, domStyle, on, query, scrollWindow, scrollorama, Block, Animation) {
         
+        // private, static helpers for the Scrollorama instances
+        var statics = {
+            
+            // a unique serial number
+            _serial: 1,
+            
+            // generate a serial number
+            generateSerial: function() {
+                
+                var serial = this._serial;
+                this._serial += 1;
+                return serial;
+            }
+        };
+        
+        // the Scrollorama class
         var Scrollorama = declare(null, {
             
             
@@ -29,16 +45,19 @@ define(
             // the CSS block selector (as a string)
             _selector: null,
             
+            // the instance's serial id data attribute (string)
+            _serialId: null,
+            
             // the blocks' DOM nodes
             _blocks: null,
             
-            // the blocks' id map (maps _blocks[i].node["data-scrollorama-id"] to each block instance)
+            // the blocks' id map (maps _blocks[i].node["data-scrollorama{serial}-id"] to each block instance)
             _blocksMap: null,
             
-            // the blocks wrapper DOM node
+            // the blocks' wrapper DOM node
             _wrapper: null,
             
-            // the blocks wrapper original styles
+            // the blocks' wrapper original styles
             _wrapperStyles: null,
             
             // the wrapper's base height
@@ -60,6 +79,9 @@ define(
                     // run the callback immediately - not atomic :(
     				callback();
     			},
+    		
+    		// have we started processing scrolling yet?
+    		_started: false,
             
             
             ///////////////////////////////////////////////////////////////////
@@ -67,6 +89,8 @@ define(
             ///////////////////////////////////////////////////////////////////
             
             constructor: function(selector) {
+                
+                this._serialId = "data-scrollorama" + statics.generateSerial() + "-id";
                 
                 this._selector = selector;
                 
@@ -87,71 +111,132 @@ define(
             // public api
             ///////////////////////////////////////////////////////////////////
             
-            // register a NodeList of DOM nodes with a list of animation
-            // configurations
-            register: function(nodes) {
+            // configure pinning for a NodeList of block DOM nodes or a
+            // single block's DOM node with the following parameters:
+            //
+            //  nodes:
+            //      the block nodes to pin; can be a NodeList from query(),
+            //      a CSS selector string, or a single DOM node. the nodes
+            //      must have been matched by the Scrollorama constructor's
+            //      CSS selector, and each block's node may only be pinned
+            //      once.
+            //
+            //  options:
+            //      an Object with the following options
+            //
+            //  delay: (0)
+            //      length of scrolling in pixels from the top edge of the
+            //      block crossing the bottom edge of the screen before
+            //      pinning starts (Number or function).
+            //
+            //  duration: (0)
+            //      length of scrolling in pixels over which the pinning occurs
+            //      after the delay from the bottom of the screen has been
+            //      scrolled through.
+            //
+            //  the delay and duration settings may either be a Number or a 
+            //  function that returns a Number with the following signature:
+            //
+            //      function(screenHeight, blockHeight)
+            //
+            //          screenHeight: (calculated)
+            //              the current height of the screen in pixels
+            //
+            //          blockHeight: (calculated)
+            //              the current height of the block in pixels
+            pin: function(nodes, options) {
+                
+                var settings = {
+                    delay: 0,
+                    duration: 0
+                };
+                declare.safeMixin(settings, options);
+                
+                // convert the nodes to a NodeList
+                if (!(nodes instanceof NodeList)) {
+                    
+                    if (typeof nodes === "string") {
+                        
+                        // query for the selector
+                        nodes = query(nodes);
+                        
+                    } else {
+                        
+                        // assume a single DOM node
+                        nodes = new NodeList(nodes);
+                    }
+                }
+                
+                // process each DOM node
+                nodes.forEach(lang.hitch(this, function(node) {
+                    
+                    var 
+                        // get the block instance
+                        block = this._blocksMap[domAttr.get(node, this._serialId)];
+                    
+                    if (block === undefined) {
+                        
+                        throw new Error(
+                            "One of the blocks passed passed to pin() was not initialized " + 
+                            "when this Scrollorama instance was created."
+                        );
+                    }
+                    
+                    // set the block's pinning data
+                    block.pin(settings.delay, settings.duration);
+                }));
+            },
+            
+            // animate a NodeList of DOM nodes or a single DOM node with a
+            // list of animation configurations
+            animate: function(nodes) {
                 
                 // nodes:
                 //      the animation target nodes; can be a NodeList from
                 //      query(), a CSS selector string, or a single DOM node.
+                //      the nodes must be children of one of the blocks matched
+                //      by the Scrollorama constructor's CSS selector.
                 //
                 // additional arguments:
                 //      array of animation parameters Objects
                 //
-                // animation parameters:
+                // where animation parameters are specified as:
                 //
                 //  delay: (0)
-                //      amount of scrolling (in delayUnits) from the (delayEdge) of the
+                //      length of scrolling in pixels from the top edge of the
                 //      block crossing the bottom edge of the screen before animation
-                //      starts.
-                //  delayUnits: ("%")
-                //      the units to measure the scroll delay.
-                //      may be "px" for absolute lengths or "%" for relative lengths
-                //      of the screen's height, e.g. 25%.
-                //  delayEdge: (0)
-                //      the horizontal edge line of the block from which to measure the
-                //      delay with respect to the bottom edge of the screen
-                //      may be a numerical percentage of the block's border-box height,
-                //      e.g. 50 for the middle of the block, or one of the presets
-                //      "top" === 0, "bottom" === 100 or "middle" === 50
-                // 
-                //      the overall duration of the animation is the sum of
-                //      screenDuration and blockDuration.
-                //      used in combination with "%" units, this makes it easy to 
-                //      configure an animation that runs from the bottom of the screen 
-                //      all the way until the block has completely left the screen,
-                //      i.e. screenDuration === 100% and blockDuration === 100%
-                //      with delay === 0.
+                //      starts (Number or function).
                 //
-                //  screenDuration: (100)
-                //      screen length of scrolling (in screenDurationUnits) over which
-                //      the animation occurs after the delay from the bottom of the
-                //      screen has been scrolled through.
-                //  screenDurationUnits: ("%")
-                //      the units to measure the screen scroll duration
-                //      may be "px" for absolute lengths or "%" for relative lengths
-                //      of the screen's height, e.g. 25%.
-                //  blockDuration: (100)
-                //      block length of scrolling (in blockDurationUnits) over which
-                //      the animation occurs after the delay from the bottom of the
-                //      screen has been scrolled through.
-                //  blockDurationUnits: ("%")
-                //      the units to measure the block scroll duration
-                //      may be "px" for absolute lengths or "%" for relative lengths
-                //      of the block's border-box height, e.g. 25%.
+                //  duration: (0)
+                //      length of scrolling in pixels over which the animation occurs
+                //      after the delay from the bottom of the screen has been scrolled
+                //      through.
+                //
+                //  delay and duration settings may either be a 
+                //  Number or a function that returns a Number with the 
+                //  following signature:
+                //      function(screenHeight, blockHeight, pinDelay, pinDuration)
+                //          screenHeight: (calculated)
+                //              the current height of the screen in pixels
+                //          blockHeight: (calculated)
+                //              the current height of the block in pixels
+                //          pinDelay: (0)
+                //              the delay in pixels before the block becomes pinned, if
+                //              pinning is configured for this animation's block
+                //          pinDuration: (0)
+                //              the block's pin duration, if pinning is configured for
+                //              this animation's block
+                //
                 //  property: (required)
                 //      CSS property being animated (must be numerical)
+                //
                 //  begin: (current value)
                 //      beginning value of the CSS property
-                //      (uses current value if not specified)
+                //
                 //  end: (current value)
                 //      ending value of the CSS property
-                //      (uses current value if not specified)
-                //  pin: (false)
-                //      pin the block during the animation's duration?
-                //  easing: (null)
-                //      one of the methods from the easing packages
-                //      (the default, null, uses Linear.easeNone() easing)
+                //  easing: (Linear.easeNone)
+                //      one of the methods from the easing package
                 
                 var 
                     // store the animations arguments
@@ -159,7 +244,7 @@ define(
                         return i !== 0;
                     });
                 
-                // convert the target to a NodeList
+                // convert the nodes to a NodeList
                 if (!(nodes instanceof NodeList)) {
                     
                     if (typeof nodes === "string") {
@@ -191,7 +276,7 @@ define(
                     }
                     
                     // look up the block data
-                    block = this._blocksMap[domAttr.get(block[0], "data-scrollorama-id")];
+                    block = this._blocksMap[domAttr.get(block[0], this._serialId)];
                     if (block === undefined) {
                         
                         throw new Error(
@@ -203,13 +288,26 @@ define(
                     // add each animation to the block's animations array
                     array.forEach(animations, lang.hitch(this, function(anim) {
                         
-                        block.addAnimation(new Animation(block, node, anim));
+                        block.addAnimation(new Animation(node, anim));
                     }));
                     
                 }));
+            },
+            
+            // update the page and start processing scrolling
+            go: function() {
                 
-    			// update!
-    			this._update();
+                if (this._started) {
+                    
+                    return;
+                }
+                this._started = true;
+                
+                // register the event handlers
+                this._registerHandlers();
+                
+                // update!
+                this._update();
             },
             
             
@@ -242,9 +340,6 @@ define(
                 
                 // initialize the blocks
                 this._initializeBlocks(blocksData);
-                
-                // register event handlers
-                this._registerHandlers();
             },
             
             _buildBlocksData: function(nodes) {
@@ -323,18 +418,17 @@ define(
                 index = 0;
                 blocks = [];
                 blocksMap = { };
-                blocksData.forEach(function(data) {
+                blocksData.forEach(lang.hitch(this, function(data) {
                     
                     // store the scrollorama id on this node
-                    domAttr.set(data.node, "data-scrollorama-id", "" + index);
+                    domAttr.set(data.node, this._serialId, "" + index);
                     
                     var block = new Block(data.node, data.marginBox, data.position);
                     blocks.push(block);
                     blocksMap["" + index] = block;
                     
                     index += 1;
-                });
-                
+                }));
                 
                 this._blocks = blocks;
                 this._blocksMap = blocksMap;
@@ -343,25 +437,27 @@ define(
             _scrollorama: function() {
                 
                 var 
-                    // all pinning ranges
-                    ranges = new RangeSet();
+                    // the screen's position and dimensions
+                    screenPosition = scrollWindow.getBox(),
+                    screenTopPixel = screenPosition.t,
+                    screenHeight = screenPosition.h,
+                    
+                    // the cumulative pinning offset
+                    offset = 0;
                     
                 // update each block, setting top offsets along the way
                 array.forEach(this._blocks, function(block) {
                     
                     // set the block's top offset
-                    block.setTopOffset(ranges.totalLength());
+                    block.setOffset(offset);
                     
-                    // update the block's animations
-                    // and track its pinning ranges
-                    ranges.extend(block.update());
-                    
-                    // simplify the ranges
-                    ranges = ranges.simplify();
+                    // update the block's animations, accumulating
+                    // pinning offsets
+                    offset += block.update(screenTopPixel, screenHeight);
                 });
                 
-                // update the wrapper's height
-                domStyle.set(this._wrapper, "height", this._wrapperHeight + ranges.totalLength() + "px");
+                // update the wrapper's height to accommodate pinning offsets
+                domStyle.set(this._wrapper, "height", this._wrapperHeight + offset + "px");
             }
         });
         

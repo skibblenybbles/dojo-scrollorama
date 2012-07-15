@@ -2,11 +2,12 @@ define(
     [
         "dojo/_base/array",
         "dojo/_base/declare",
+        "dojo/_base/lang",
+        "dojo/dom-geometry",
         "dojo/dom-style",
-        "./_base",
-        "../ranges/RangeSet"
+        "./_base"
     ],
-    function(array, declare, domStyle, blocks, RangeSet) {
+    function(array, declare, lang, domGeom, domStyle, blocks) {
         
         
         var Block = declare(null, {
@@ -24,20 +25,23 @@ define(
             // the block's original position
             _position: null,
             
-            // the block's current top offset
-            // (to adjust for blocks above that are pinned)
-            _topOffset: 0,
-            
-            // the block's current pin offset
-            // (to adjust for animations before and after their pinning)
-            _pinOffset: 0,
-            
             // the block's Animation objects
             _animations: null,
             
             // the original CSS style properties which may be overwritten
             // for animations
             _styles: null,
+            
+            // the block's pinning configuration, set up by calling pin()
+            _pin: null,
+            
+            // the block's current top offset
+            // (to adjust for blocks above that are pinned)
+            _topOffset: 0,
+            
+            // the block's current pin offset
+            // (to adjust for the offset after pinning)
+            _pinOffset: 0,
             
             
             ///////////////////////////////////////////////////////////////////
@@ -102,109 +106,169 @@ define(
             // public api
             ///////////////////////////////////////////////////////////////////
             
-            // return the DOM node
-            getNode: function() {
-                
-                return this._node;
-            },
-            
             // add an animation
             addAnimation: function(animation) {
                 
                 this._animations.push(animation);
             },
             
+            // configure pinning for this block, the block may only have one
+            // pinning configuration, so an error is thrown if this gets
+            // called more than once. the paramters are:
+            //
+            //  delay:
+            //      length of scrolling in pixels from the top edge of the
+            //      block crossing the bottom edge of the screen before
+            //      pinning starts (Number or function).
+            //
+            //  duration:
+            //      length of scrolling in pixels over which the pinning
+            //      occurs after the delay from the bottom of the screen has 
+            //      been scrolled through.
+            //
+            //  the delay and duration settings may either be a Number or a 
+            //  function that returns a Number with the following signature:
+            //
+            //      function(screenHeight, blockHeight)
+            //
+            //          screenHeight: (calculated)
+            //              the current height of the screen in pixels
+            //
+            //          blockHeight: (calculated)
+            //              the current height of the block in pixels
+            pin: function(delay, duration) {
+                
+                if (this._pin !== null) {
+                    
+                    throw new Error(
+                        "You may only specify up to one pinning configuration for each block."
+                    );
+                }
+                
+                // sanity checks
+                if (!(typeof delay === "number" || lang.isFunction(delay))) {
+                    
+                    throw new Error(
+                        "The delay paramter must be a Number or a function."
+                    );
+                }
+                
+                if (!(typeof duration === "number" || lang.isFunction(duration))) {
+                    
+                    throw new Error(
+                        "The duration paramter must be a Number or a function."
+                    );
+                }
+                
+                // store the pinning data
+                this._pin = {
+                    delay: delay,
+                    duration: duration
+                };
+            },
+            
             // set the node's top offset
-            setTopOffset: function(offset) {
+            setOffset: function(offset) {
                 
                 this._topOffset = offset;
                 domStyle.set(this._node, "top", this._position.y + this._topOffset + this._pinOffset + "px");
             },
             
-            // update all of the block's animations and return
-            // pinning range data
-            update: function() {
+            // update all of the block's animations and return the block's
+            // pinning duration
+            update: function(screenTopPixel, screenHeight) {
                 
                 var
-                    // pinning ranges for finished animations
-                    // (used to calculate the pinOffset)
-                    finishedRanges = new RangeSet(),
+                    // the block's calculated position, top pixel and height
+                    blockPosition,
+                    blockTopPixel,
+                    blockHeight,
                     
-                    // all pinning ranges
-                    // (used by the Scrollorama instance to adjust all 
-                    // subsequent blocks and the wrapper's height)
-                    allRanges = new RangeSet(),
-                    
-                    // the pin positions currently applying to this block
-                    pinPositions = [],
-                    
-                    // the average of the pin positions
-                    pinPosition;
+                    // the calculated pin delay, duration and completion percentage
+                    pinDelay = 0,
+                    pinDuration = 0,
+                    pinPercent;
                 
                     
                 // reset the "position" and "top" styles so we can correctly
-                // calculate the animations' completion percentage
+                // calculate the block's position and each animation's
+                // completion percentage
                 domStyle.set(this._node, {
                     "position": "absolute",
                     "top": this._position.y + this._topOffset + "px"
                 });
                 
-                // update each animation and track pinning data
+                // calculate the block's position, top pixel and height
+                blockPosition = domGeom.position(this._node, true);
+                blockTopPixel = blockPosition.y;
+                blockHeight = blockPosition.h;
+                
+                // calculate the pin delay, duration and completion percentage
+                if (this._pin !== null) {
+                    
+                    pinDelay = 
+                        lang.isFunction(this._pin.delay)
+                        ?
+                        this._pin.delay(screenHeight, blockHeight)
+                        :
+                        this._pin.delay;
+                    
+                    pinDuration =
+                        lang.isFunction(this._pin.duration)
+                        ?
+                        this._pin.duration(screenHeight, blockHeight)
+                        :
+                        this._pin.duration;
+                    
+                    pinPercent = 
+                        pinDuration === 0 
+                        ?
+                        1.0
+                        :
+                        (screenTopPixel + screenHeight - (blockTopPixel + pinDelay)) / pinDuration;
+                }
+                
+                // update each animation
                 array.forEach(this._animations, function(animation) {
                     
-                    var pinningData = animation.update();
-                    
-                    // track pinning data?
-                    if (pinningData !== null) {
-                        
-                        // track all ranges
-                        allRanges.add(pinningData.range);
-                        
-                        // track other data based on the animation's state
-                        switch (pinningData.state) {
-                            
-                            case "above":
-                            
-                                // this animation is finished, so track
-                                // its range separately
-                                finishedRanges.add(pinningData.range);
-                                break;
-                            
-                            case "below":
-                                
-                                // nothing to track
-                                break;
-                            
-                            case "pinned":
-                                
-                                // the animation is pinned, so track its
-                                // pinning position
-                                pinPositions.push(pinningData.position);
-                                break;
-                        }
-                    }
+                    animation.update(
+                        screenTopPixel,
+                        screenHeight,
+                        blockTopPixel,
+                        blockHeight,
+                        pinDelay,
+                        pinDuration
+                    );
                 });
                 
-                // calculate the pinning offset
-                this._pinOffset = finishedRanges.totalLength();
-                
-                // is the block pinned?
-                if (pinPositions.length > 0) {
+                // is the block currently pinned?
+                if (this._pin !== null &&
+                    pinPercent >= 0.0 &&
+                    pinPercent <= 1.0
+                ) {
                     
-                    // set the block's position to "fixed" and its "top" to the
-                    // average of the pin positions
-                    pinPosition = 0;
-                    array.forEach(pinPositions, function(position) {
-                        
-                        pinPosition += position;
-                    });
-                    pinPosition = Math.round(pinPosition / pinPositions.length);
+                    // the block is pinned
+                    
+                    // the pinning offset is zero
+                    this._pinOffset = 0;
+                    
+                    // set its position to "fixed" with the correct "top" offset
                     domStyle.set(this._node, {
                         "position": "fixed",
-                        "top": pinPosition + "px"
+                        "top": screenHeight - pinDelay + "px"
                     });
                     
                 } else {
+                    
+                    // the block is not pinned
+                    
+                    // calculate the pinning offset
+                    this._pinOffset = 
+                        this._pin !== null && pinPercent > 1.0
+                        ?
+                        pinDuration
+                        :
+                        0;
                     
                     // set the "top" to the calculated offset
                     domStyle.set(this._node, {
@@ -212,8 +276,8 @@ define(
                     });
                 }
                 
-                // return the pinning range data
-                return allRanges;
+                // return the pin duration
+                return pinDuration;
             }
         });
         
