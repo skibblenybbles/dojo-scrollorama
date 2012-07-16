@@ -215,14 +215,19 @@ define(
                 //  delay and duration settings may either be a 
                 //  Number or a function that returns a Number with the 
                 //  following signature:
+                //
                 //      function(screenHeight, blockHeight, pinDelay, pinDuration)
+                //
                 //          screenHeight: (calculated)
                 //              the current height of the screen in pixels
+                //
                 //          blockHeight: (calculated)
                 //              the current height of the block in pixels
+                //
                 //          pinDelay: (0)
                 //              the delay in pixels before the block becomes pinned, if
                 //              pinning is configured for this animation's block
+                //
                 //          pinDuration: (0)
                 //              the block's pin duration, if pinning is configured for
                 //              this animation's block
@@ -352,7 +357,7 @@ define(
                     blocksData.push({
                         node: node,
                         marginBox: domGeom.getMarginBox(node),
-                        position: domGeom.position(node)
+                        position: domGeom.position(node, true)
                     });
                 });
                 
@@ -410,6 +415,10 @@ define(
             _initializeBlocks: function(blocksData) {
                 
                 var 
+                    // the wrapper's position
+                    wrapperPosition = domGeom.position(this._wrapper, true),
+                    
+                    // processing data
                     index,
                     blocks,
                     blocksMap;
@@ -423,7 +432,12 @@ define(
                     // store the scrollorama id on this node
                     domAttr.set(data.node, this._serialId, "" + index);
                     
-                    var block = new Block(data.node, data.marginBox, data.position);
+                    var block = new Block(
+                        data.node, 
+                        data.marginBox, 
+                        data.position, 
+                        wrapperPosition
+                    );
                     blocks.push(block);
                     blocksMap["" + index] = block;
                     
@@ -442,6 +456,9 @@ define(
                     screenTopPixel = screenPosition.t,
                     screenHeight = screenPosition.h,
                     
+                    // the wrapper's position
+                    wrapperPosition = domGeom.position(this._wrapper, true),
+                    
                     // the cumulative pinning offset
                     offset = 0;
                     
@@ -449,17 +466,207 @@ define(
                 array.forEach(this._blocks, function(block) {
                     
                     // set the block's top offset
-                    block.setOffset(offset);
+                    block.setOffset(wrapperPosition, offset);
                     
                     // update the block's animations, accumulating
                     // pinning offsets
-                    offset += block.update(screenTopPixel, screenHeight);
+                    offset += block.update(wrapperPosition, screenTopPixel, screenHeight);
                 });
                 
                 // update the wrapper's height to accommodate pinning offsets
                 domStyle.set(this._wrapper, "height", this._wrapperHeight + offset + "px");
             }
         });
+        
+        
+        ///////////////////////////////////////////////////////////////////////
+        // static helpers
+        ///////////////////////////////////////////////////////////////////////
+        
+        // scale and offset a function
+        var linearize = function(fn, scale, offset) {
+            
+            if (scale === undefined) {
+                
+                scale = 1.0;
+            }
+            
+            if (offset === undefined) {
+                
+                offset = 0.0;
+            }
+            
+            return function() {
+                
+                return (scale * fn.apply(null, arguments)) + offset;
+            }
+        }
+        
+        // helpers for pin delay and duration calculations
+        Scrollorama.pin = {
+            
+            delay: {
+                
+                // pin the block at the top of the screen
+                top: function(s, b) {
+                    return s;
+                },
+                
+                // pin the block in the middle of the screen
+                middle: function(s, b) {
+                    return 0.5 * (s + b);
+                },
+                
+                // pin the block at the bottom of the screen
+                bottom: function(s, b) {
+                    return b;
+                },
+                
+                // linearized versions
+                linearTop: function(scale, offset) {
+                    return linearize(this.top, scale, offset);
+                },
+                linearMiddle: function(scale, offset) {
+                    return linearize(this.middle, scale, offset);
+                },
+                linearBottom: function(scale, offset) {
+                    return linearize(this.bottom, scale, offset);
+                }
+            },
+            
+            duration: {
+                
+                // pin for the height of the screen
+                screen: function(s, b) {
+                    return s;
+                },
+
+                // pin for the height of the block
+                block: function(s, b) {
+                    return b;
+                },
+                
+                // pin for the height of the screen plus the
+                // height of the block
+                full: function(s, b) {
+                    return s + b;
+                },
+                
+                // linearized versions
+                linearScreen: function(scale, offset) {
+                    return linearize(this.screen, scale, offset);
+                },
+                linearBlock: function(scale, offset) {
+                    return linearize(this.block, scale, offset);
+                },
+                linearFull: function(scale, offset) {
+                    return linearize(this.full, scale, offset);
+                }
+            }
+        };
+        
+        // helpers for animation delay and duration calculations
+        Scrollorama.animate = {
+            
+            delay: {
+                
+                // animate at the top of the screen
+                top: function(s, b, d, p) {
+                    return s + d + p;
+                },
+                
+                // animate in the middle of the screen (without pinning)
+                middle: function(s, b, d, p) {
+                    return 0.5 * (s + b);
+                },
+                
+                // animate at the bottom of the screen
+                bottom: function(s, b, d, p) {
+                    return 0;
+                },
+                
+                // animate when the pinning begins
+                pin: function(s, b, d, p) {
+                    return d;
+                },
+                
+                // animate after the pinning ends
+                after: function(s, b, d, p) {
+                    return d + p;
+                },
+                
+                // linearized versions
+                linearTop: function(scale, offset) {
+                    return linearize(this.top, scale, offset);
+                },
+                linearMiddle: function(scale, offset) {
+                    return linearize(this.middle, scale, offset);
+                },
+                linearBottom: function(scale, offset) {
+                    return linearize(this.bottom, scale, offset);
+                },
+                linearPin: function(scale, offset) {
+                    return linearize(this.pin, scale, offset);
+                },
+                linearAfter: function(scale, offset) {
+                    return linearize(this.after, scale, offset);
+                }
+            },
+            
+            duration: {
+                
+                // animate for the height of the screen
+                screen: function(s, b, d, p) {
+                    return s;
+                },
+                
+                // animate for the height of the block
+                block: function(s, b, d, p) {
+                    return b;
+                },
+                
+                // animate for the pin's duration
+                pin: function(s, b, d, p) {
+                    return p;
+                },
+                
+                // animate for the height before the pin
+                before: function(s, b, d, p) {
+                    return s + b - d;
+                },
+                
+                // animate for the height after the pin
+                after: function(s, b, d, p) {
+                    return s - d;
+                },
+                
+                // animate for the height of the screen, plus
+                // the height of block plus the pin's duration
+                full: function(s, b, d, p) {
+                    return s + b + p;
+                },
+                
+                // linearized versions
+                linearScreen: function(scale, offset) {
+                    return linearize(this.screen, scale, offset);
+                },
+                linearBlock: function(scale, offset) {
+                    return linearize(this.block, scale, offset);
+                },
+                linearPin: function(scale, offset) {
+                    return linearize(this.pin, scale, offset);
+                },
+                linearBefore: function(scale, offset) {
+                    return linearize(this.before, scale, offset);
+                },
+                linearAfter: function(scale, offset) {
+                    return linearize(this.after, scale, offset);
+                },
+                linearFull: function(scale, offset) {
+                    return linearize(this.full, scale, offset);
+                }
+            }
+        };
         
         
         // define the package structure

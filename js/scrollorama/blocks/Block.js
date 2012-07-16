@@ -48,7 +48,7 @@ define(
             // constructor
             ///////////////////////////////////////////////////////////////////
             
-            constructor: function(node, marginBox, position) {
+            constructor: function(node, marginBox, position, wrapperPosition) {
                 
                 var styles;
                 
@@ -95,7 +95,8 @@ define(
                 
                 // set the node's top position and margin styles
                 domStyle.set(this._node, {
-                    "top": this._position.y + "px",
+                    "top": -wrapperPosition.y + this._position.y + "px",
+                    "left": -wrapperPosition.x + this._position.x + "px",
                     "margin-top": "0",
                     "margin-bottom": "0"
                 });
@@ -114,7 +115,7 @@ define(
             
             // configure pinning for this block, the block may only have one
             // pinning configuration, so an error is thrown if this gets
-            // called more than once. the paramters are:
+            // called more than once. the parameters are:
             //
             //  delay:
             //      length of scrolling in pixels from the top edge of the
@@ -149,14 +150,14 @@ define(
                 if (!(typeof delay === "number" || lang.isFunction(delay))) {
                     
                     throw new Error(
-                        "The delay paramter must be a Number or a function."
+                        "The delay parameter must be a Number or a function."
                     );
                 }
                 
                 if (!(typeof duration === "number" || lang.isFunction(duration))) {
                     
                     throw new Error(
-                        "The duration paramter must be a Number or a function."
+                        "The duration parameter must be a Number or a function."
                     );
                 }
                 
@@ -168,15 +169,18 @@ define(
             },
             
             // set the node's top offset
-            setOffset: function(offset) {
+            setOffset: function(wrapperPosition, offset) {
                 
                 this._topOffset = offset;
-                domStyle.set(this._node, "top", this._position.y + this._topOffset + this._pinOffset + "px");
+                domStyle.set(this._node, {
+                    "top": -wrapperPosition.y + this._position.y + this._topOffset + this._pinOffset + "px",
+                    "left": -wrapperPosition.x + this._position.x + "px"
+                });
             },
             
             // update all of the block's animations and return the block's
             // pinning duration
-            update: function(screenTopPixel, screenHeight) {
+            update: function(wrapperPosition, screenTopPixel, screenHeight) {
                 
                 var
                     // the block's calculated position, top pixel and height
@@ -195,7 +199,8 @@ define(
                 // completion percentage
                 domStyle.set(this._node, {
                     "position": "absolute",
-                    "top": this._position.y + this._topOffset + "px"
+                    "top": -wrapperPosition.y + this._position.y + this._topOffset + "px",
+                    "left": -wrapperPosition.x + this._position.x + "px"
                 });
                 
                 // calculate the block's position, top pixel and height
@@ -255,7 +260,8 @@ define(
                     // set its position to "fixed" with the correct "top" offset
                     domStyle.set(this._node, {
                         "position": "fixed",
-                        "top": screenHeight - pinDelay + "px"
+                        "top": screenHeight - pinDelay + "px",
+                        "left": this._position.x + "px"
                     });
                     
                 } else {
@@ -272,7 +278,7 @@ define(
                     
                     // set the "top" to the calculated offset
                     domStyle.set(this._node, {
-                        "top": this._position.y + this._topOffset + this._pinOffset + "px"
+                        "top": -wrapperPosition.y + this._position.y + this._topOffset + this._pinOffset + "px"
                     });
                 }
                 
