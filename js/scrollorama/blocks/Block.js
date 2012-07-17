@@ -48,28 +48,17 @@ define(
             // constructor
             ///////////////////////////////////////////////////////////////////
             
-            constructor: function(node, marginBox, position, wrapperPosition) {
+            constructor: function(node) {
                 
                 var styles;
                 
+                // store the node
                 this._node = node;
-                this._marginBox = marginBox;
-                this._position = position;
                 
                 // sanity check
-                if (this._node === null || this._node === undefined) {
+                if (node === null || node === undefined) {
                     
                     throw new Error("You must pass a DOM node to the Block constructor.");
-                }
-                
-                if (this._marginBox === null || this._marginBox === undefined) {
-                    
-                    throw new Error("You must pass the DOM node's margin box to the Block constructor.");
-                }
-                
-                if (this._position === null || this._position === undefined) {
-                    
-                    throw new Error("You must pass the DOM node's position to the Block constructor.");
                 }
                 
                 // we'll need the node's original styles
@@ -78,28 +67,16 @@ define(
                 // set up the animations array
                 this._animations = [];
                 
-                // store the original styles that we may modify
+                // store the original styles that we will modify
                 this._styles = { };
                 
-                this._styles["display"] = styles["display"];
                 this._styles["position"] = styles["position"];
                 this._styles["top"] = styles["top"];
+                this._styles["left"] = styles["left"];
                 this._styles["margin-top"] = styles["margin-top"];
                 this._styles["margin-bottom"] = styles["margin-bottom"];
-                
-                // the node's position should be "absolute"
-                if (this._styles["position"] !== "absolute") {
-                    
-                    domStyle.set(this._node, "position", "absolute");
-                }
-                
-                // set the node's top position and margin styles
-                domStyle.set(this._node, {
-                    "top": -wrapperPosition.y + this._position.y + "px",
-                    "left": -wrapperPosition.x + this._position.x + "px",
-                    "margin-top": "0",
-                    "margin-bottom": "0"
-                });
+                this._styles["margin-left"] = styles["margin-left"];
+                this._styles["margin-right"] = styles["margin-right"];
             },
             
             
@@ -107,8 +84,8 @@ define(
             // public api
             ///////////////////////////////////////////////////////////////////
             
-            // add an animation
-            addAnimation: function(animation) {
+            // add an animation inside this block
+            animate: function(animation) {
                 
                 this._animations.push(animation);
             },
@@ -168,7 +145,61 @@ define(
                 };
             },
             
-            // set the node's top offset
+            // initialize the block's styles
+            initialize: function(marginBox, position, wrapperPosition) {
+                
+                // store the margin box and position
+                this._marginBox = marginBox;
+                this._position = position;
+                
+                // the node's position should be "absolute"
+                if (this._styles["position"] !== "absolute") {
+                    
+                    domStyle.set(this._node, "position", "absolute");
+                }
+                
+                // set the node's "top" and "left" positions and "margin" styles
+                domStyle.set(this._node, {
+                    "top": -wrapperPosition.y + this._position.y + "px",
+                    "left": -wrapperPosition.x + this._position.x + "px",
+                    "margin-top": "0",
+                    "margin-bottom": "0",
+                    "margin-left": "0",
+                    "margin-right": "0"
+                });
+            },
+            
+            // reset the block's styles
+            reset: function() {
+                
+                domStyle.set(this._node, this._styles);
+            },
+            
+            // calculate the pin's offset
+            calculatePinOffset: function(screenHeight) {
+                
+                var
+                    // the block's calculated height
+                    blockHeight = domGeom.position(this._node, true).h;
+                
+                // return the calculated pinning duration
+                if (this._pin !== null) {
+                    
+                    return (
+                        lang.isFunction(this._pin.duration)
+                        ?
+                        this._pin.duration(screenHeight, blockHeight)
+                        :
+                        this._pin.duration
+                    );
+                
+                } else {
+                    
+                    return 0;
+                }
+            },
+            
+            // set the block node's top offset
             setOffset: function(wrapperPosition, offset) {
                 
                 this._topOffset = offset;
@@ -178,9 +209,9 @@ define(
                 });
             },
             
-            // update all of the block's animations and return the block's
-            // pinning duration
-            update: function(wrapperPosition, screenTopPixel, screenHeight) {
+            // update all of the block's animations and pin the block,
+            // if necessary
+            updateAnimations: function(wrapperPosition, screenTopPixel, screenHeight) {
                 
                 var
                     // the block's calculated position, top pixel and height
@@ -191,10 +222,15 @@ define(
                     // the calculated pin delay, duration and completion percentage
                     pinDelay = 0,
                     pinDuration = 0,
-                    pinPercent;
-                
+                    pinPercent,
                     
-                // reset the "position" and "top" styles so we can correctly
+                    // the animations along with their completion percentages
+                    animationsAbove = [],
+                    animationsBelow = [],
+                    animationsCurrent = [];
+                
+                
+                // reset the "position", "top" and "left" styles so we can correctly
                 // calculate the block's position and each animation's
                 // completion percentage
                 domStyle.set(this._node, {
@@ -233,18 +269,59 @@ define(
                         (screenTopPixel + screenHeight - (blockTopPixel + pinDelay)) / pinDuration;
                 }
                 
-                // update each animation
+                // calculate each animations completion percentage
+                // to build up the above / below / current arrays
                 array.forEach(this._animations, function(animation) {
                     
-                    animation.update(
-                        screenTopPixel,
-                        screenHeight,
-                        blockTopPixel,
-                        blockHeight,
-                        pinDelay,
-                        pinDuration
-                    );
+                    var 
+                        // we need the animation's completion percentage
+                        percent = animation.calculatePercentage(
+                            screenTopPixel,
+                            screenHeight,
+                            blockTopPixel,
+                            blockHeight,
+                            pinDelay,
+                            pinDuration
+                        ),
+                        
+                        // data to store for this animation
+                        data = {
+                            animation: animation,
+                            percent: percent
+                        };
+                    
+                    if (percent < 0.0) {
+                        
+                        // the animation is below its starting point
+                        animationsBelow.push(data);
+                        
+                    } else if (percent > 1.0) {
+                        
+                        // the animation is above its ending point
+                        animationsAbove.push(data);
+                        
+                    } else {
+                        
+                        // the animation is currently running
+                        animationsCurrent.push(data);
+                    }
                 });
+                
+                // animations which are below the screen should update from 
+                // the bottom up with respect to their registered order
+                animationsBelow.reverse();
+                
+                // start, finish or update each animation
+                array.forEach(animationsAbove, function(data) {
+                    data.animation.finish();
+                });
+                array.forEach(animationsBelow, function(data) {
+                    data.animation.start();
+                });
+                array.forEach(animationsCurrent, function(data) {
+                    data.animation.update(data.percent);
+                });
+                
                 
                 // is the block currently pinned?
                 if (this._pin !== null &&
@@ -281,9 +358,6 @@ define(
                         "top": -wrapperPosition.y + this._position.y + this._topOffset + this._pinOffset + "px"
                     });
                 }
-                
-                // return the pin duration
-                return pinDuration;
             }
         });
         

@@ -27,16 +27,36 @@ define(
             
             // generate a serial number
             generateSerial: function() {
-                
+            
                 var serial = this._serial;
                 this._serial += 1;
                 return serial;
+            },
+            
+            // scale and offset a function
+            linearize: function(fn, scale, offset) {
+
+                if (scale === undefined) {
+                    
+                    scale = 1.0;
+                }
+
+                if (offset === undefined) {
+
+                    offset = 0.0;
+                }
+
+                return function() {
+
+                    return (scale * fn.apply(null, arguments)) + offset;
+                }
             }
         };
         
+        
         // the Scrollorama class
         var Scrollorama = declare(null, {
-            
+        
             
             ///////////////////////////////////////////////////////////////////
             // internal state
@@ -44,13 +64,13 @@ define(
             
             // the CSS block selector (as a string)
             _selector: null,
-            
+        
             // the instance's serial id data attribute (string)
             _serialId: null,
-            
+        
             // the blocks' DOM nodes
             _blocks: null,
-            
+        
             // the blocks' id map (maps _blocks[i].node["data-scrollorama{serial}-id"] to each block instance)
             _blocksMap: null,
             
@@ -59,44 +79,34 @@ define(
             
             // the blocks' wrapper original styles
             _wrapperStyles: null,
-            
+        
             // the wrapper's base height
             _wrapperHeight: 0,
             
             // TODO: handle firing block change events with proper Dojo events
             // _onBlockChange: null, // ???
             // _blockIndex: 0, // ???
-            
-            // browser-specific method for performing atomic animations
-            _animateAtomic:
-                window.requestAnimationFrame ||
-                window.webkitRequestAnimationFrame ||
-                window.mozRequestAnimationFrame ||
-                window.oRequestAnimationFrame ||
-                window.msRequestAnimationFrame ||
-                function(callback) {
-                    
-                    // run the callback immediately - not atomic :(
-    				callback();
-    			},
-    		
+		    
     		// have we started processing scrolling yet?
     		_started: false,
+            
+            // the previous scroll position
+            _previousScroll: null,
             
             
             ///////////////////////////////////////////////////////////////////
             // constructor
             ///////////////////////////////////////////////////////////////////
-            
+        
             constructor: function(selector) {
-                
+            
                 this._serialId = "data-scrollorama" + statics.generateSerial() + "-id";
-                
+            
                 this._selector = selector;
-                
+            
                 // sanity check
                 if (!(lang.isString(this._selector))) {
-                    
+                
                     throw new Error(
                         "You must pass a CSS selector string to the Scrollorama constructor."
                     );
@@ -105,12 +115,12 @@ define(
                 // initialize
                 this._initialize();
             },
-            
-            
+        
+        
             ///////////////////////////////////////////////////////////////////
             // public api
             ///////////////////////////////////////////////////////////////////
-            
+        
             // configure pinning for a NodeList of block DOM nodes or a
             // single block's DOM node with the following parameters:
             //
@@ -145,7 +155,7 @@ define(
             //          blockHeight: (calculated)
             //              the current height of the block in pixels
             pin: function(nodes, options) {
-                
+            
                 var settings = {
                     delay: 0,
                     duration: 0
@@ -154,43 +164,43 @@ define(
                 
                 // convert the nodes to a NodeList
                 if (!(nodes instanceof NodeList)) {
+                
+                    if (lang.isString(nodes)) {
                     
-                    if (typeof nodes === "string") {
-                        
                         // query for the selector
                         nodes = query(nodes);
-                        
+                    
                     } else {
-                        
+                    
                         // assume a single DOM node
                         nodes = new NodeList(nodes);
                     }
                 }
-                
+            
                 // process each DOM node
                 nodes.forEach(lang.hitch(this, function(node) {
-                    
+                
                     var 
                         // get the block instance
                         block = this._blocksMap[domAttr.get(node, this._serialId)];
-                    
+                
                     if (block === undefined) {
-                        
+                    
                         throw new Error(
                             "One of the blocks passed passed to pin() was not initialized " + 
                             "when this Scrollorama instance was created."
                         );
                     }
-                    
+                
                     // set the block's pinning data
                     block.pin(settings.delay, settings.duration);
                 }));
             },
-            
+        
             // animate a NodeList of DOM nodes or a single DOM node with a
             // list of animation configurations
             animate: function(nodes) {
-                
+            
                 // nodes:
                 //      the animation target nodes; can be a NodeList from
                 //      query(), a CSS selector string, or a single DOM node.
@@ -242,7 +252,7 @@ define(
                 //      ending value of the CSS property
                 //  easing: (Linear.easeNone)
                 //      one of the methods from the easing package
-                
+            
                 var 
                     // store the animations arguments
                     animations = array.filter(arguments, function(anim, i) {
@@ -251,12 +261,12 @@ define(
                 
                 // convert the nodes to a NodeList
                 if (!(nodes instanceof NodeList)) {
+                
+                    if (lang.isString(nodes)) {
                     
-                    if (typeof nodes === "string") {
-                        
                         // query for the selector
                         nodes = query(nodes);
-                        
+                    
                     } else {
                         
                         // assume a single DOM node
@@ -276,7 +286,8 @@ define(
                     if (block.length !== 1) {
                         
                         throw new Error(
-                            "One of the DOM nodes passed to animate() does not have a unique containing block."
+                            "One of the DOM nodes passed to animate() does " +
+                            "not have a unique containing block."
                         );
                     }
                     
@@ -285,15 +296,16 @@ define(
                     if (block === undefined) {
                         
                         throw new Error(
-                            "One of the parent blocks of the nodes passed to animate() was not initialized " +
-                            "when this Scrollorama instance was created."
+                            "One of the parent blocks of the nodes passed " +
+                            "to animate() was not initialized when this " +
+                            "Scrollorama instance was created."
                         );
                     }
                     
                     // add each animation to the block's animations array
-                    array.forEach(animations, lang.hitch(this, function(anim) {
+                    array.forEach(animations, lang.hitch(this, function(animation) {
                         
-                        block.addAnimation(new Animation(node, anim));
+                        block.animate(new Animation(node, animation));
                     }));
                     
                 }));
@@ -308,11 +320,40 @@ define(
                 }
                 this._started = true;
                 
+                // initialize the pins
+                this._initializePins();
+                
                 // register the event handlers
                 this._registerHandlers();
                 
-                // update!
-                this._update();
+                // scroll!
+                this._scrollorama();
+            },
+            
+            ///////////////////////////////////////////////////////////////////
+            // event handlers
+            ///////////////////////////////////////////////////////////////////
+            
+            _onScroll: function() {
+                
+                // scroll!
+                this._scrollorama();
+            },
+            
+            _onResize: function() {
+                
+                // reset, reinitialize and scroll!
+                this._reset();
+                this._initialize();
+                this._initializePins();
+                this._scrollorama();
+            },
+            
+            // register event handlers
+            _registerHandlers: function() {
+                
+                on(window, "scroll", lang.hitch(this, this._onScroll));
+                on(window, "resize", lang.hitch(this, this._onResize));
             },
             
             
@@ -320,22 +361,10 @@ define(
             // internal methods
             ///////////////////////////////////////////////////////////////////
             
-            _update: function() {
-                
-                this._animateAtomic(lang.hitch(this, this._scrollorama));
-            },
-            
-            _registerHandlers: function() {
-                
-                on(window, "scroll", lang.hitch(this, this._update));
-            },
-            
+            // initialize the wrapper and all of its blocks
             _initialize: function() {
-                
+            
                 var blocksData;
-                
-                // make _animateAtomic run in the context of the window
-                this._animateAtomic = lang.hitch(window, this._animateAtomic);
                 
                 // build the blocks' data with the selected nodes
                 blocksData = this._buildBlocksData(query(this._selector));
@@ -347,8 +376,26 @@ define(
                 this._initializeBlocks(blocksData);
             },
             
-            _buildBlocksData: function(nodes) {
+            // reset the wrapper and all of its blocks
+            _reset: function() {
                 
+                // just reset the wrapper's position
+                if (this._wrapper !== null && this._wrapperStyles !== null) {
+                    
+                    domStyle.set(this._wrapper, {
+                        "position": this._wrapperStyles["position"]
+                    });
+                }
+                
+                // reset each block
+                array.forEach(this._blocks, function(block) {
+                    
+                    block.reset();
+                });
+            },
+            
+            _buildBlocksData: function(nodes) {
+            
                 var blocksData = [];
                 
                 nodes.forEach(function(node) {
@@ -365,7 +412,7 @@ define(
             },
             
             _initializeWrapper: function(blocksData) {
-                
+            
                 var wrapper = null,
                     height = 0,
                     styles;
@@ -377,104 +424,151 @@ define(
                     if (wrapper === null) {
                         
                         wrapper = data.node.parentNode;
-                    
+                        
                     } else {
                         
                         if (data.node.parentNode !== wrapper) {
                             
-                            throw new Error("The blocks must all share the same parent node.");
+                            throw new Error("The blocks must all share the same parent DOM node.");
                         }
                     }
                     
                     height += data.marginBox.h;
                 });
                 
-                // set up the wrapper's styles
-                this._wrapper = wrapper;
-                this._wrapperStyles = { };
-                this._wrapperHeight = height;
+                // on the first pass, store the wrapper's initial styles
+                if (this._wrapper === null) {
+                    
+                    this._wrapper = wrapper;
+                    this._wrapperStyles = { };
+                    
+                    if (this._wrapper !== null) {
+                        
+                        styles = domStyle.getComputedStyle(this._wrapper);
+                        
+                        // store the original styles that we will change
+                        this._wrapperStyles["position"] = styles["position"];
+                        this._wrapperStyles["height"] = styles["height"];
+                    }
+                }
+                
+                // set the wrapper's position and store the base height
                 if (this._wrapper !== null) {
                     
-                    styles = domStyle.getComputedStyle(this._wrapper);
-                    
-                    // store the original styles that we may change
-                    this._wrapperStyles["position"] = styles["position"];
-                    this._wrapperStyles["height"] = styles["height"];
-                    
-                    // the wrapper's position should be "relative"
                     if (this._wrapperStyles["position"] !== "relative") {
                         
                         domStyle.set(this._wrapper, "position", "relative");
                     }
                     
-                    // set the wrapper's base height
-                    domStyle.set(this._wrapper, "height", this._wrapperHeight + "px");
+                    this._wrapperHeight = height;
                 }
             },
             
             _initializeBlocks: function(blocksData) {
-                
+            
                 var 
                     // the wrapper's position
                     wrapperPosition = domGeom.position(this._wrapper, true),
-                    
+                
                     // processing data
                     index,
                     blocks,
                     blocksMap;
+            
+                // on the first pass, build the blocks and map
+                if (this._blocks === null || this._blocksMap === null) {
+                    
+                    index = 0;
+                    blocks = [];
+                    blocksMap = { };
+                    blocksData.forEach(lang.hitch(this, function(data) {
                 
-                // build the blocks and map
-                index = 0;
-                blocks = [];
-                blocksMap = { };
-                blocksData.forEach(lang.hitch(this, function(data) {
+                        // store the scrollorama id on this node
+                        domAttr.set(data.node, this._serialId, "" + index);
                     
-                    // store the scrollorama id on this node
-                    domAttr.set(data.node, this._serialId, "" + index);
+                        // create the block
+                        var block = new Block(data.node);
                     
-                    var block = new Block(
-                        data.node, 
+                        // store the block and map its id for fast lookups
+                        blocks.push(block);
+                        blocksMap["" + index] = block;
+                    
+                        index += 1;
+                    }));
+                    
+                    this._blocks = blocks;
+                    this._blocksMap = blocksMap;
+                }
+                
+                // sanity check
+                if (this._blocks.length !== blocksData.length) {
+                    
+                    throw new Error(
+                        "The number of registered blocks does not match the " +
+                        "number of queried blocks in _initializeBlocks()."
+                    );
+                }
+                
+                // initialize each block's position
+                array.forEach(this._blocks, function(block, i) {
+                    
+                    var data = blocksData[i];
+                    
+                    block.initialize(
                         data.marginBox, 
-                        data.position, 
+                        data.position,
                         wrapperPosition
                     );
-                    blocks.push(block);
-                    blocksMap["" + index] = block;
-                    
-                    index += 1;
-                }));
-                
-                this._blocks = blocks;
-                this._blocksMap = blocksMap;
+                });
             },
             
+            // initialize each block's pin offset and expand the
+            // wrapper's height
+            _initializePins: function() {
+                
+                var 
+                    // the screen's height
+                    screenHeight = scrollWindow.getBox().h,
+                    
+                    // the wrapper's position
+                    wrapperPosition = domGeom.position(this._wrapper, true),
+                    
+                    // the calculated offset
+                    offset = 0;
+                
+                array.forEach(this._blocks, function(block) {
+                    
+                    block.setOffset(wrapperPosition, offset);
+                    offset += block.calculatePinOffset(screenHeight);
+                });
+                
+                // expand the wrapper's height
+                domStyle.set(this._wrapper, "height", this._wrapperHeight + offset + "px");
+            },
+            
+            // update all of the blocks and their animations based on the
+            // current scroll position
             _scrollorama: function() {
                 
                 var 
-                    // the screen's position and dimensions
+                    // the screen's position data
                     screenPosition = scrollWindow.getBox(),
                     screenTopPixel = screenPosition.t,
                     screenHeight = screenPosition.h,
                     
                     // the wrapper's position
-                    wrapperPosition = domGeom.position(this._wrapper, true),
-                    
-                    // the cumulative pinning offset
-                    offset = 0;
-                    
-                // update each block, setting top offsets along the way
+                    wrapperPosition = domGeom.position(this._wrapper, true);
+                
+                
+                // update each block's animations
                 array.forEach(this._blocks, function(block) {
                     
-                    // set the block's top offset
-                    block.setOffset(wrapperPosition, offset);
-                    
-                    // update the block's animations, accumulating
-                    // pinning offsets
-                    offset += block.update(wrapperPosition, screenTopPixel, screenHeight);
+                    block.updateAnimations(
+                        wrapperPosition,
+                        screenTopPixel,
+                        screenHeight
+                    );
                 });
-                
-                // update the wrapper's height to accommodate pinning offsets
-                domStyle.set(this._wrapper, "height", this._wrapperHeight + offset + "px");
             }
         });
         
@@ -482,25 +576,6 @@ define(
         ///////////////////////////////////////////////////////////////////////
         // static helpers
         ///////////////////////////////////////////////////////////////////////
-        
-        // scale and offset a function
-        var linearize = function(fn, scale, offset) {
-            
-            if (scale === undefined) {
-                
-                scale = 1.0;
-            }
-            
-            if (offset === undefined) {
-                
-                offset = 0.0;
-            }
-            
-            return function() {
-                
-                return (scale * fn.apply(null, arguments)) + offset;
-            }
-        }
         
         // helpers for pin delay and duration calculations
         Scrollorama.pin = {
@@ -524,13 +599,13 @@ define(
                 
                 // linearized versions
                 linearTop: function(scale, offset) {
-                    return linearize(this.top, scale, offset);
+                    return statics.linearize(this.top, scale, offset);
                 },
                 linearMiddle: function(scale, offset) {
-                    return linearize(this.middle, scale, offset);
+                    return statics.linearize(this.middle, scale, offset);
                 },
                 linearBottom: function(scale, offset) {
-                    return linearize(this.bottom, scale, offset);
+                    return statics.linearize(this.bottom, scale, offset);
                 }
             },
             
@@ -554,13 +629,13 @@ define(
                 
                 // linearized versions
                 linearScreen: function(scale, offset) {
-                    return linearize(this.screen, scale, offset);
+                    return statics.linearize(this.screen, scale, offset);
                 },
                 linearBlock: function(scale, offset) {
-                    return linearize(this.block, scale, offset);
+                    return statics.linearize(this.block, scale, offset);
                 },
                 linearFull: function(scale, offset) {
-                    return linearize(this.full, scale, offset);
+                    return statics.linearize(this.full, scale, offset);
                 }
             }
         };
@@ -597,19 +672,19 @@ define(
                 
                 // linearized versions
                 linearTop: function(scale, offset) {
-                    return linearize(this.top, scale, offset);
+                    return statics.linearize(this.top, scale, offset);
                 },
                 linearMiddle: function(scale, offset) {
-                    return linearize(this.middle, scale, offset);
+                    return statics.linearize(this.middle, scale, offset);
                 },
                 linearBottom: function(scale, offset) {
-                    return linearize(this.bottom, scale, offset);
+                    return statics.linearize(this.bottom, scale, offset);
                 },
                 linearPin: function(scale, offset) {
-                    return linearize(this.pin, scale, offset);
+                    return statics.linearize(this.pin, scale, offset);
                 },
                 linearAfter: function(scale, offset) {
-                    return linearize(this.after, scale, offset);
+                    return statics.linearize(this.after, scale, offset);
                 }
             },
             
@@ -641,29 +716,29 @@ define(
                 },
                 
                 // animate for the height of the screen, plus
-                // the height of block plus the pin's duration
+                // the height of block, plus the pin's duration
                 full: function(s, b, d, p) {
                     return s + b + p;
                 },
                 
                 // linearized versions
                 linearScreen: function(scale, offset) {
-                    return linearize(this.screen, scale, offset);
+                    return statics.linearize(this.screen, scale, offset);
                 },
                 linearBlock: function(scale, offset) {
-                    return linearize(this.block, scale, offset);
+                    return statics.linearize(this.block, scale, offset);
                 },
                 linearPin: function(scale, offset) {
-                    return linearize(this.pin, scale, offset);
+                    return statics.linearize(this.pin, scale, offset);
                 },
                 linearBefore: function(scale, offset) {
-                    return linearize(this.before, scale, offset);
+                    return statics.linearize(this.before, scale, offset);
                 },
                 linearAfter: function(scale, offset) {
-                    return linearize(this.after, scale, offset);
+                    return statics.linearize(this.after, scale, offset);
                 },
                 linearFull: function(scale, offset) {
-                    return linearize(this.full, scale, offset);
+                    return statics.linearize(this.full, scale, offset);
                 }
             }
         };

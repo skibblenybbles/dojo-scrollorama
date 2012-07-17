@@ -75,10 +75,6 @@ define(
             // for animations
             _styles: null,
             
-            // was the block being animated during the last update?
-            // (initialize to true to force one update)
-            _animatedLast: true,
-            
             
             ///////////////////////////////////////////////////////////////////
             // constructor
@@ -124,6 +120,63 @@ define(
             // public api
             ///////////////////////////////////////////////////////////////////
             
+            // calculate the animation's completion percentage
+            calculatePercentage: function(screenTopPixel, screenHeight, blockTopPixel, blockHeight, pinDelay, pinDuration) {
+                
+                var 
+                    // calculate the delay offset
+                    delay = 
+                        lang.isFunction(this.delay)
+                        ?
+                        this.delay(screenHeight, blockHeight, pinDelay, pinDuration)
+                        :
+                        this.delay,
+                
+                    // calculate the duration
+                    duration =
+                        lang.isFunction(this.duration)
+                        ?
+                        this.duration(screenHeight, blockHeight, pinDelay, pinDuration)
+                        :
+                        this.duration,
+                
+                    // calculate the animation completion percentage
+                    animPercent = 
+                        duration === 0
+                        ?
+                        1.0
+                        :
+                        (screenTopPixel + screenHeight - (blockTopPixel + delay)) / duration;
+                
+                return animPercent;
+            },
+            
+            // start the node's animation
+            start: function() {
+                
+                this._setProperty(this.begin);
+            },
+            
+            // finish the node's animation
+            finish: function() {
+                
+                this._setProperty(this.end);
+            },
+            
+            // update the node's animation
+            update: function(percent) {
+                
+                // update the percentage with easing
+                if (this.easing !== null) {
+                    
+                    percent = this.easing(percent, 0, 1, 1);
+                }
+                
+                // set the CSS property value
+                this._setProperty(this.begin + (percent * (this.end - this.begin)));
+            },
+            
+            /*
             // update the node's animation
             update: function(screenTopPixel, screenHeight, blockTopPixel, blockHeight, pinDelay, pinDuration) {
                 
@@ -168,7 +221,7 @@ define(
                     this._setProperty(this.begin + (animPercent * (this.end - this.begin)));
                     
                     // this will have been animated on the previous update
-                    this._animatedLast = true;
+                    this._updatedLast = true;
                     
                 } else {
                     
@@ -176,7 +229,7 @@ define(
                     
                     // if we animated on the previous update,
                     // set the begin or end CSS property value
-                    if (this._animatedLast) {
+                    if (this._updatedLast) {
                         
                         if (animPercent < 0.0) {
                             
@@ -191,9 +244,10 @@ define(
                     }
                     
                     // this will no longer have been animated on the previous update
-                    this._animatedLast = false;
+                    this._updatedLast = false;
                 }
             },
+            */
             
             
             ///////////////////////////////////////////////////////////////////
