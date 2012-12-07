@@ -160,8 +160,8 @@ define(
                 
                 // set the node's "top" and "left" positions and "margin" styles
                 domStyle.set(this._node, {
-                    "top": -wrapperPosition.y + this._position.y + "px",
-                    "left": -wrapperPosition.x + this._position.x + "px",
+                    "top": Math.round(-wrapperPosition.y + this._position.y) + "px",
+                    "left": Math.round(-wrapperPosition.x + this._position.x) + "px",
                     "margin-top": "0",
                     "margin-bottom": "0",
                     "margin-left": "0",
@@ -204,8 +204,8 @@ define(
                 
                 this._topOffset = offset;
                 domStyle.set(this._node, {
-                    "top": -wrapperPosition.y + this._position.y + this._topOffset + this._pinOffset + "px",
-                    "left": -wrapperPosition.x + this._position.x + "px"
+                    "top": Math.round(-wrapperPosition.y + this._position.y + this._topOffset + this._pinOffset) + "px",
+                    "left": Math.round(-wrapperPosition.x + this._position.x) + "px"
                 });
             },
             
@@ -235,8 +235,8 @@ define(
                 // completion percentage
                 domStyle.set(this._node, {
                     "position": "absolute",
-                    "top": -wrapperPosition.y + this._position.y + this._topOffset + "px",
-                    "left": -wrapperPosition.x + this._position.x + "px"
+                    "top": Math.round(-wrapperPosition.y + this._position.y + this._topOffset) + "px",
+                    "left": Math.round(-wrapperPosition.x + this._position.x) + "px"
                 });
                 
                 // calculate the block's position, top pixel and height
@@ -337,8 +337,8 @@ define(
                     // set its position to "fixed" with the correct "top" offset
                     domStyle.set(this._node, {
                         "position": "fixed",
-                        "top": screenHeight - pinDelay + "px",
-                        "left": this._position.x + "px"
+                        "top": Math.round(screenHeight - pinDelay) + "px",
+                        "left": Math.round(this._position.x) + "px"
                     });
                     
                 } else {
@@ -355,7 +355,7 @@ define(
                     
                     // set the "top" to the calculated offset
                     domStyle.set(this._node, {
-                        "top": -wrapperPosition.y + this._position.y + this._topOffset + this._pinOffset + "px"
+                        "top": Math.round(-wrapperPosition.y + this._position.y + this._topOffset + this._pinOffset) + "px"
                     });
                 }
             }

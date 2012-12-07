@@ -433,7 +433,7 @@ define(
                         }
                     }
                     
-                    height += data.marginBox.h;
+                    height += Math.round(data.marginBox.h);
                 });
                 
                 // on the first pass, store the wrapper's initial styles
@@ -543,7 +543,7 @@ define(
                 });
                 
                 // expand the wrapper's height
-                domStyle.set(this._wrapper, "height", this._wrapperHeight + offset + "px");
+                domStyle.set(this._wrapper, "height", Math.round(this._wrapperHeight + offset) + "px");
             },
             
             // update all of the blocks and their animations based on the

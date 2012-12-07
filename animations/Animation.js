@@ -8,7 +8,7 @@ define(
         "./_base",
         
         // package modifiers (no passed values required)
-        "dojo/_base/sniff",
+        "dojo/_base/sniff"
     ],
     function(declare, lang, domGeom, domStyle, has, animation) {
         
