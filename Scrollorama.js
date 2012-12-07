@@ -3,7 +3,7 @@ define(
         "dojo/_base/array",
         "dojo/_base/declare",
         "dojo/_base/lang",
-        "dojo/_base/NodeList",
+        "dojo/NodeList",
         "dojo/dom-attr",
         "dojo/dom-geometry",
         "dojo/dom-style",
